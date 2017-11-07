@@ -25,9 +25,11 @@ public class MainActivity extends AppCompatActivity{
 
     private SensorManager sensorManager;
     private Sensor gyroscopeSensor;
-    private SensorEventListener gyroscopeEventListener;
+    private Sensor accelerometerSensor;
+    private SensorEventListener sensorEventListener;
     File dir;
     String filepath;
+    String filename;
 
     // Storage Permissions
     private static final int REQUEST_EXTERNAL_STORAGE = 1;
@@ -45,9 +47,16 @@ public class MainActivity extends AppCompatActivity{
 
         sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         gyroscopeSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE);
+        accelerometerSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
 
-        if (gyroscopeSensor == null){
+        if(gyroscopeSensor == null & accelerometerSensor == null){
+            Toast.makeText(this, "No Gyroscope and Accelerometer!", Toast.LENGTH_SHORT).show();
+            finish();
+        } else if (gyroscopeSensor == null){
             Toast.makeText(this, "The device has no Gyroscope!", Toast.LENGTH_SHORT).show();
+            finish();
+        }else if (accelerometerSensor == null){
+            Toast.makeText(this, "The device has no Accelerometer!", Toast.LENGTH_SHORT).show();
             finish();
         }
 
@@ -62,100 +71,43 @@ public class MainActivity extends AppCompatActivity{
             Toast.makeText(getBaseContext(), "Directory exists", Toast.LENGTH_LONG).show();
         }
 
-        gyroscopeEventListener = new SensorEventListener() {
+        String entry = String.format("TIMESTAMP,SENSORTYPE,X_VAL,Y_VAL,Z_VAL,,\n");
+        File file = new File(dir, "output.csv");
+        writeDataToFile(file, false, entry);
+
+        sensorEventListener = new SensorEventListener() {
 
             @Override
             public void onSensorChanged(SensorEvent sensorEvent){
-
-                final float EPSILON = 0.02f;
 
                 // Axis of the rotation sample, not normalized yet.
                 float axisX = sensorEvent.values[0];
                 float axisY = sensorEvent.values[1];
                 float axisZ = sensorEvent.values[2];
 
-                displayXValue(axisX);
-                displayYValue(axisY);
-                displayZValue(axisZ);
+                displayGyroXValue(axisX);
+                displayGyroYValue(axisY);
+                displayGyroZValue(axisZ);
 
-                // Calculate the angular speed of the sample
-                float omegaMagnitude = (float) Math.sqrt(axisX*axisX + axisY*axisY + axisZ*axisZ);
+                String entry = "";
 
-                // Normalize the rotation vector if it's big enough to get the axis
-                // (that is, EPSILON should represent your maximum allowable margin of error)
-                if (omegaMagnitude > EPSILON) {
-                    axisX /= omegaMagnitude;
-                    axisY /= omegaMagnitude;
-                    axisZ /= omegaMagnitude;
-                }
-
-/*                if(sensorEvent.values[2] > 0.5f){
-                    getWindow().getDecorView().setBackgroundColor(Color.BLUE);
-                }else if(sensorEvent.values[2] < -0.5f){
-                    getWindow().getDecorView().setBackgroundColor(Color.YELLOW);
-                }*/
-
-                String entry = String.valueOf(axisX) + "," + String.valueOf(axisY) + "," + String.valueOf(axisZ) + "\n";
-
-                /*
-                File dir = new File(getStorageDir());
-                Log.v("Path", getStorageDir());
-
-                if (!dir.exists()) {
-                    // make directory if not available
-                    Boolean dirsMade = dir.mkdir();
-                    Log.v("Gyro", dirsMade.toString());         // log if make directory operation was successful or not
+                switch(sensorEvent.sensor.getType()) {
+                    case Sensor.TYPE_GYROSCOPE:
+                        displayGyroXValue(axisX);
+                        displayGyroYValue(axisY);
+                        displayGyroZValue(axisZ);
+                        entry = String.format("%d,GYRO,%f,%f,%f,%f,%f\n", sensorEvent.timestamp, sensorEvent.values[0], sensorEvent.values[1], sensorEvent.values[2], 0.f, 0.f);
+                        break;
+                    case Sensor.TYPE_ACCELEROMETER:
+                        displayAccelXValue(axisX);
+                        displayAccelYValue(axisY);
+                        displayAccelZValue(axisZ);
+                        entry = String.format("%d,ACC,%f,%f,%f,%f,%f\n", sensorEvent.timestamp, sensorEvent.values[0], sensorEvent.values[1], sensorEvent.values[2], 0.f, 0.f);
+                        break;
                 }
 
                 File file = new File(dir, "output.csv");
-                try {
-                    FileOutputStream f = new FileOutputStream(file, true);
-                    f.write(entry.getBytes());
-                    f.flush();
-                    f.close();
-                    // Toast.makeText(getBaseContext(), "Data saved", Toast.LENGTH_LONG).show();
-                } catch (FileNotFoundException e) {
-                    e.printStackTrace();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-*/
-
-                File file = new File(dir, "output.csv");
-
-                try {
-                    FileOutputStream f = new FileOutputStream(file, true);
-                    f.write(entry.getBytes());
-                    f.flush();
-                    f.close();
-                    Log.v("Path", filepath);
-                    Toast.makeText(getBaseContext(), "Data saved", Toast.LENGTH_LONG).show();
-                } catch (FileNotFoundException e) {
-                    e.printStackTrace();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-
-//                FileOutputStream outputStream;
-//                File dir = new File(getStorageDir());
-//
-//                Log.v("Path", getStorageDir());
-//
-//                if (!dir.exists()) {
-//                    // make directory if not available
-//                    Boolean dirsMade = dir.mkdir();
-//                    Log.v("Gyro", dirsMade.toString());         // log if make directory operation was successful or not
-//                }
-//
-//                File file = new File(dir, "output.csv");
-//
-//                try {
-//                    outputStream = openFileOutput(file, Context.MODE_PRIVATE);
-//                    outputStream.write(entry.getBytes());
-//                    outputStream.close();
-//                } catch (Exception e) {
-//                    e.printStackTrace();
-//                }
+                writeDataToFile(file, true, entry);
 
             }
 
@@ -167,30 +119,91 @@ public class MainActivity extends AppCompatActivity{
 
     }
 
+    /**
+     * Write the sensor data entry to the specified file
+     * @param file
+     * @param append
+     * @param entry
+     */
+    void writeDataToFile(File file, boolean append, String entry){
+        try {
+            FileOutputStream f = new FileOutputStream(file, append);
+            f.write(entry.getBytes());
+            f.flush();
+            f.close();
+            Log.v("Path", filepath);
+            Toast.makeText(getBaseContext(), "Data saved", Toast.LENGTH_LONG).show();
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
-        sensorManager.registerListener(gyroscopeEventListener, gyroscopeSensor, 100000);
+        sensorManager.registerListener(sensorEventListener, gyroscopeSensor, 100000);
+        sensorManager.registerListener(sensorEventListener, accelerometerSensor, 100000);
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-        sensorManager.unregisterListener(gyroscopeEventListener);
+        sensorManager.unregisterListener(sensorEventListener);
     }
 
-    public void displayXValue(float val){
-        TextView xValueView = (TextView) findViewById(R.id.x_value);
+    /**
+     * Displays the Gyroscope x value
+     * @param val
+     */
+    public void displayGyroXValue(float val){
+        TextView xValueView = (TextView) findViewById(R.id.gyroscope_x_value);
         xValueView.setText(String.valueOf(val));
     }
 
-    public void displayYValue(float val){
-        TextView yValueView = (TextView) findViewById(R.id.y_value);
+    /**
+     * Displays the Gyroscope y value
+     * @param val
+     */
+    public void displayGyroYValue(float val){
+        TextView yValueView = (TextView) findViewById(R.id.gyroscope_y_value);
         yValueView.setText(String.valueOf(val));
     }
 
-    public void displayZValue(float val){
-        TextView zValueView = (TextView) findViewById(R.id.z_value);
+    /**
+     * Displays the Gyroscope z value
+     * @param val
+     */
+    public void displayGyroZValue(float val){
+        TextView zValueView = (TextView) findViewById(R.id.gyroscope_z_value);
+        zValueView.setText(String.valueOf(val));
+    }
+
+    /**
+     * Displays the Accelerometer x value
+     * @param val
+     */
+    public void displayAccelXValue(float val){
+        TextView xValueView = (TextView) findViewById(R.id.accelerometer_x_value);
+        xValueView.setText(String.valueOf(val));
+    }
+
+    /**
+     * Displays the Accelerometer x value
+     * @param val
+     */
+    public void displayAccelYValue(float val){
+        TextView yValueView = (TextView) findViewById(R.id.accelerometer_y_value);
+        yValueView.setText(String.valueOf(val));
+    }
+
+    /**
+     * Displays the Accelerometer x value
+     * @param val
+     */
+    public void displayAccelZValue(float val){
+        TextView zValueView = (TextView) findViewById(R.id.accelerometer_z_value);
         zValueView.setText(String.valueOf(val));
     }
 
